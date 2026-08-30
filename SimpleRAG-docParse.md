@@ -5,7 +5,7 @@
 
 * JSON
 * Docx
-* PDF
+* PDF:解析工具有：PyPDFLoader｜PyPDFium2|PDFMiner|PyMuPDF
 * CSV
 * MarkDown
 * HTML
