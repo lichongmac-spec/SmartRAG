@@ -47,7 +47,7 @@ flowchart LR
 
 文档解析是构建RAG系统的第一步，也是决定整个系统效果的上限。它的核心任务是将非结构化的原始文档（如PDF、Word、扫描件、图片）转化为结构化的、机器可读的数据，为后续的文本切分、向量化和检索奠定基础。
 
-详情查看[](SimpleRAG-docParse.md)
+详情查看[简单的RAG文档解析](SimpleRAG-docParse.md)
 
 
 ### 第一步：文本切分（Chunking）
