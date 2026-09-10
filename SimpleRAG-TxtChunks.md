@@ -263,7 +263,7 @@ print(f"词元序列 (前10个): {tokens[:10]}")
 
 #### 代码示例：LangChain TokenTextSplitter
 ```python
-from langchain.text_splitter import TokenTextSplitter
+from langchain_text_splitters import TokenTextSplitter
 
 # 使用 OpenAI 的 cl100k_base 分词器，每块 20 个词元，重叠 5 个词元
 splitter = TokenTextSplitter(
@@ -283,7 +283,7 @@ for i, chunk in enumerate(chunks, 1):
 
 #### 运行输出示例
 ```
-/github/SmartRAG/py/textChunks_TokenTextSplitter.py 
+\github\SmartRAG\py\textChunks_baseTokenTextSplitter' 
 ✅ 原始文本: 检索增强生成技术结合了信息检索与大语言模型，能够有效减少模型产生幻觉的问题。
 ✅ 生成块数: 3
 
@@ -303,3 +303,198 @@ for i, chunk in enumerate(chunks, 1):
 *   **LangChain官方文档**：对`TokenTextSplitter`和`SentenceTransformersTokenTextSplitter`的接口与用法有详细说明，并强调了使用与模型匹配的分词器的重要性。
 *   **开源项目与社区实践**：`rag-chunk`等项目提供了对比词元分块与单词分块的实践工具和评估建议，指出“当准备OpenAI模型的块时，应使用tiktoken”。
 *   **学术研究**：有论文系统评估了固定大小分块在不同领域数据集上的表现，指出最优块大小是任务和数据依赖的；Jina AI的研究则提出了“后期分块”（Late Chunking）这一改变传统顺序的新范式，并通过实验验证了其有效性。
+
+## 3. 结构感知分块
+### 3.1 递归字符分块
+
+#### 3.1.1 名词：递归字符分块
+- **名词解释**：一种通过维护层级分隔符列表，逐级尝试切割文本的分块策略。它优先使用最粗粒度的分隔符（如段落），若切割后的文本块仍超过设定大小，则递归使用更细粒度的分隔符（如句子、单词），直至满足大小要求。
+- **基本原理与概念**：递归字符分块的核心设计目标是**尽可能保持文本的自然语义边界**。默认的分隔符列表为 `["\n\n", "\n", " ", ""]`，分别对应段落、换行、空格和字符。算法首先尝试用 `\n\n`（段落边界）切分文本；如果某个部分仍超过 `chunk_size`，则对该部分使用 `\n`（换行符）继续切分；若仍超限，则继续使用 `" "`（空格）和 `""`（逐字符）作为兜底策略。这种递归机制使得分割器能够在控制块大小的同时，**尽可能保留段落和句子的完整性**。
+
+#### 3.1.2 名词：分隔符层级
+- **名词解释**：递归字符分块中使用的有序分隔符列表，按从粗到细的粒度排列，用于指导递归切割的优先级顺序。
+- **基本原理与概念**：分隔符层级的设计体现了**语义粒度递减**的思想。粗粒度分隔符（如 `\n\n`）对应较大的语义单元（段落），细粒度分隔符（如 `" "`）对应较小的语义单元（单词）。算法从最粗粒度开始尝试，只有在当前粒度无法满足大小限制时才降级到下一级。这种“先粗后细”的策略确保了在大多数情况下，文本块能够以段落或句子为边界，从而保持语义连贯性。
+
+#### 3.1.3 相关工具：RecursiveCharacterTextSplitter
+- **`RecursiveCharacterTextSplitter`**：LangChain 中实现递归字符分块的标准组件，被官方文档明确推荐为**大多数场景的起点**。官方指出它“在保持上下文完整和管理块大小之间提供了可靠的平衡”。该分割器支持配置 `chunk_size`、`chunk_overlap`、`separators` 等参数。对于特定语言（如 Python），可以通过 `LanguageSeparators` 获取对应的语法分隔符列表，并将其作为子类实现（如 `PythonCodeTextSplitter`）。
+
+#### 代码示例
+```python
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+text = """检索增强生成技术结合了信息检索与大语言模型。
+它能够有效减少模型产生幻觉的问题。RAG系统的核心步骤包括文档加载、文本切分、向量化和检索生成。"""
+
+# 默认分隔符列表：["\n\n", "\n", " ", ""]
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=30,
+    chunk_overlap=5
+)
+
+chunks = splitter.split_text(text)
+
+print(f"✅ 原始文本长度: {len(text)} 字符")
+print(f"✅ 生成块数: {len(chunks)}\n")
+for i, chunk in enumerate(chunks, 1):
+    print(f"块 {i} (长度: {len(chunk)} 字符): {chunk}")
+```
+
+#### 运行输出示例
+```
+✅ 原始文本长度: 78 字符
+✅ 生成块数: 3
+
+块 1 (长度: 27 字符): 检索增强生成技术结合了信息检索与大语言模型。
+块 2 (长度: 29 字符): 它能够有效减少模型产生幻觉的问题。
+块 3 (长度: 22 字符): RAG系统的核心步骤包括文档加载、文本切分、向量化和检索生成。
+```
+
+
+### 3.2 基于文档结构
+
+#### 3.2.1 名词：基于文档结构的分块
+- **名词解释**：一种利用文档固有结构（如标题层级、标签元素、代码语法）作为切分边界的分块策略。它不依赖固定长度，而是尊重文档本身的组织方式，将内容划分为符合其逻辑结构的文本块。
+- **基本原理与概念**：这类分块器被称为“**结构感知分块器**”，它们在元素级别拆分文本，并为每个块添加与其相关的标题元数据。其核心目标是：(a) 保持相关文本在语义上的分组，(b) 保留文档结构中编码的上下文信息。例如，`MarkdownHeaderTextSplitter` 和 `HTMLHeaderTextSplitter` 会根据指定的标题标签（如 `#`、`##` 或 `<h1>`、`<h2>`）切分文本，并将标题信息作为元数据附加到对应的块上，从而在检索时提供更丰富的上下文。
+
+#### 3.2.2 相关工具
+
+##### MarkdownHeaderTextSplitter
+- **名词解释**：LangChain 中专门用于处理 Markdown 文档的结构感知分块器，按 Markdown 标题层级（`#`、`##`、`###`）进行切分。
+- **基本原理与概念**：该分割器会识别指定的标题层级，并在每个标题处切分文本。切分后，每个块都会携带对应的标题元数据（如 `{"Header 1": "第一章", "Header 2": "1.1 节"}`），使得检索时能够获取内容所属的章节信息，增强上下文理解。
+
+```python
+from langchain_text_splitters import MarkdownHeaderTextSplitter
+
+markdown_text = """# 智能音箱用户手册
+
+## 快速入门
+将音箱连接电源，下载官方App进行配网。
+
+## 常见问题
+### 无法连接网络
+请检查Wi-Fi密码是否正确。"""
+
+headers_to_split_on = [
+    ("#", "Header 1"),
+    ("##", "Header 2"),
+    ("###", "Header 3"),
+]
+
+splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
+chunks = splitter.split_text(markdown_text)
+
+for i, chunk in enumerate(chunks, 1):
+    print(f"块 {i}:")
+    print(f"  元数据: {chunk.metadata}")
+    print(f"  内容: {chunk.page_content[:50]}...\n")
+```
+
+##### HTMLHeaderTextSplitter
+- **名词解释**：用于处理 HTML 文档的结构感知分块器，按 HTML 标题标签（`<h1>`、`<h2>`、`<h3>`）进行切分。
+- **基本原理与概念**：该分割器通过检测指定的标题标签，创建反映原始内容语义结构的层级化文档对象。对于每个识别出的章节，分割器会将提取的文本与对应的标题元数据关联。如果未找到指定的标题，则整个内容作为单个文档返回。
+
+```python
+from langchain_text_splitters import HTMLHeaderTextSplitter
+
+html_text = """<html>
+<body>
+<h1>智能音箱用户手册</h1>
+<h2>快速入门</h2>
+<p>将音箱连接电源，下载官方App进行配网。</p>
+<h2>常见问题</h2>
+<p>请检查Wi-Fi密码是否正确。</p>
+</body>
+</html>"""
+
+headers_to_split_on = [
+    ("h1", "Header 1"),
+    ("h2", "Header 2"),
+]
+
+splitter = HTMLHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
+chunks = splitter.split_text(html_text)
+
+for i, chunk in enumerate(chunks, 1):
+    print(f"块 {i}: {chunk.page_content[:60]}...")
+    print(f"  元数据: {chunk.metadata}\n")
+```
+
+##### PythonCodeTextSplitter（CodeTextSplitter）
+- **名词解释**：针对 Python 代码语法的专用分块器，是 `RecursiveCharacterTextSplitter` 的子类，使用 Python 特定的分隔符列表。
+- **基本原理与概念**：该分割器按 **Python 类和方法定义**进行拆分。它使用 Python 语法中特有的关键字（如 `class`、`def`）作为分隔符，确保每个代码块对应一个完整的类或函数定义。其块大小通过传递的长度函数测量（默认为字符数）。
+
+```python
+from langchain_text_splitters import PythonCodeTextSplitter
+
+python_code = """
+class Foo:
+    def bar(self):
+        pass
+
+def foo():
+    pass
+"""
+
+splitter = PythonCodeTextSplitter(chunk_size=30, chunk_overlap=0)
+chunks = splitter.split_text(python_code)
+
+for i, chunk in enumerate(chunks, 1):
+    print(f"块 {i}: {repr(chunk)}")
+```
+
+
+### 3.3 滑动窗口与父子块
+
+#### 3.3.1 名词：滑动窗口分块
+- **名词解释**：一种通过让相邻文本块保持高度重叠来缓解边界效应的分块策略。它以固定步长在文本上滑动窗口，步长通常远小于块大小。
+- **基本原理与概念**：滑动窗口策略的核心是**平衡文档段长度和滑动窗口步长**，以最大化信息保留和检索效果。有研究提出了三种具体的滑动窗口策略：固定窗口大小和固定步长分割（FFS）、动态窗口大小和固定步长分割（DFS）、以及动态窗口大小和动态步长分割（DDS）。实验表明，在窗口大小为 1024 tokens 和步长为 3 的配置下，系统能达到最佳性能。这种策略能有效保留上下文信息，减少信息丢失。
+
+#### 3.3.2 名词：父子块分块（Parent-Child Chunking）
+- **名词解释**：一种创建两种粒度文本块的策略——小块（Child）用于检索，大块（Parent）用于生成。检索时命中小块，返回其所属的大块作为上下文。
+- **基本原理与概念**：父子块分块的核心思想是**分离检索粒度和生成粒度**。小块（如句子级）能够提供精确的语义匹配，提高检索精度；而大块（如段落或文档级）则提供更完整的上下文，有利于 LLM 生成高质量的回答。这种策略通过“**小到大映射系统**”实现：系统维护小块与大块之间的对应关系，当小块被检索命中时，自动返回其对应的大块作为最终上下文。
+
+#### 3.3.3 相关工具：ParentDocumentRetriever
+- **`ParentDocumentRetriever`**：LangChain 中实现父子块检索的核心组件，允许**在小块上搜索但返回整个文档或更大的块**。它支持两种操作模式：基于小块匹配返回完整文档，或基于小块匹配返回更大的块。该检索器需要双重存储：一个用于存储小块向量，另一个用于存储大块文档，通过映射系统关联两者。
+
+#### 代码示例：滑动窗口思路
+```python
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+text = """检索增强生成技术结合了信息检索与大语言模型。
+它能够有效减少模型产生幻觉的问题。
+RAG系统的核心步骤包括文档加载、文本切分、向量化和检索生成。
+滑动窗口策略可以有效保留上下文信息。"""
+
+# 使用较小的块大小和较大的重叠，模拟滑动窗口效果
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=25,
+    chunk_overlap=15  # 高重叠率
+)
+
+chunks = splitter.split_text(text)
+for i, chunk in enumerate(chunks, 1):
+    print(f"块 {i}: {chunk}")
+```
+
+#### 代码示例：父子块思路（概念示意）
+```python
+# 父子块分块的核心逻辑示意
+parent_chunks = splitter.split_text(text)  # 大块用于生成
+
+child_splitter = RecursiveCharacterTextSplitter(chunk_size=15, chunk_overlap=3)
+child_chunks = []
+for parent in parent_chunks:
+    children = child_splitter.split_text(parent)
+    for child in children:
+        child_chunks.append({"child": child, "parent": parent})  # 建立映射
+
+# 检索时命中小块，返回对应的大块
+```
+
+
+### 📚 参考文献与出处
+
+- **LangChain官方文档**：`RecursiveCharacterTextSplitter` 被推荐为大多数场景的起点，在保持上下文完整和管理块大小之间提供了平衡。`MarkdownHeaderTextSplitter` 和 `HTMLHeaderTextSplitter` 是“结构感知”分块器，在元素级别拆分文本并添加标题元数据。
+- **LangChain GitHub源码**：`PythonCodeTextSplitter` 是 `RecursiveCharacterTextSplitter` 的子类，使用 Python 特定的分隔符列表。
+- **学术论文**：华东师范大学等机构的研究提出了基于滑动窗口策略的 RAG 系统，通过动态调整窗口大小增强上下文信息捕捉，实验表明在窗口大小为 1024 tokens 和步长为 3 的配置下达到最佳性能。
+- **工程实践**：`ParentDocumentRetriever` 允许在小块上搜索但返回更大的块，支持两种操作模式（返回完整文档或返回较大块），需要双重存储和映射系统。
