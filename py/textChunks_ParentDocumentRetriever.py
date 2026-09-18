@@ -5,7 +5,8 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 # from langchain_core.storage import InMemoryStore
 
 # 新导入（正确）
-from langgraph.store.memory import InMemoryStore
+# from langgraph.store.memory import InMemoryStore
+from langchain_core.stores import InMemoryStore          # ✅ 改为 langchain_core.stores
 # from langchain.retrievers import ParentDocumentRetriever
 # from langchain_text_splitters.retrievers import ParentDocumentRetriever
 from langchain_classic.retrievers import ParentDocumentRetriever
