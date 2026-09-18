@@ -1062,7 +1062,7 @@ config.json: 100%|████| 190/190
      - **四分位距（Interquartile Range）** ：以相似度差值的四分位距为基准确定断点。
   5. **合并块**：根据断点将句子合并为语义连贯的块。
 
-- **代码示例**：
+- **简单代码示例**：
 
 ```python
 # uv pip install semantic-text-splitter tokenizers
@@ -1258,6 +1258,540 @@ for i, chunk in enumerate(chunks, 1):
 ```
 
 通过以上分析和优化项，可以为后续正式生产开发提供清晰的指导思路：从快速原型到真正语义分块，逐步引入嵌入相似度计算和效果评估，最终构建稳定高效的 RAG 分块流水线。
+
+ `semantic-text-splitter` 的示例，其本质是**基于 Token 容量和句子边界**的分块，并未涉及**嵌入向量**、**余弦相似度**和**断点检测**这些语义分块的核心机制。
+
+下面提供一个能完整体现语义分块五步原理的代码示例，并详细解释其核心参数。
+
+### 一、LangChain `SemanticChunker` 的标准实现
+
+LangChain 的 `SemanticChunker` 是语义分块的标准实现，它内部完整遵循了“**句子切分 → 向量化 → 计算语义距离 → 断点检测 → 合并块**”的流程。
+
+```python
+# ==================== 安装依赖 ====================
+# uv pip install langchain-experimental langchain-huggingface sentence-transformers numpy
+
+from langchain_experimental.text_splitter import SemanticChunker
+from langchain_huggingface import HuggingFaceEmbeddings
+
+# ==================== 1. 初始化嵌入模型 ====================
+embeddings = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-small-zh-v1.5",
+    encode_kwargs={"normalize_embeddings": True}  # 归一化，使余弦相似度计算更稳定
+)
+
+# ==================== 2. 创建语义分块器（核心参数在这里） ====================
+text_splitter = SemanticChunker(
+    embeddings=embeddings,
+    breakpoint_threshold_type="percentile",  # 断点检测方式
+    breakpoint_threshold_amount=70,          # 百分位阈值（第70百分位）
+    buffer_size=1,                           # 句子嵌入的上下文窗口大小
+    sentence_split_regex=r"(?<=[。！？\n])",  # 中文句子切分正则
+    add_start_index=True                     # 在元数据中记录块起始位置
+)
+
+# ==================== 3. 待分块文本 ====================
+long_text = """人工智能是计算机科学的一个重要分支，旨在创造能够执行通常需要人类智能的任务的系统。
+机器学习是实现人工智能的一种核心方法，它使计算机能够从数据中学习规律。
+深度学习则是机器学习的一个子集，它使用多层神经网络来处理复杂的模式识别任务。
+与此同时，篮球是一项广受欢迎的运动，NBA联赛汇集了全世界最顶尖的篮球运动员。
+在篮球比赛中，球员们通过运球、传球和投篮来争夺分数，团队合作至关重要。"""
+
+# ==================== 4. 执行语义分块 ====================
+chunks = text_splitter.split_text(long_text)
+
+print(f"✅ 原始文本长度: {len(long_text)} 字符")
+print(f"✅ 生成块数: {len(chunks)}\n")
+for i, chunk in enumerate(chunks, 1):
+    print(f"--- 块 {i} ---")
+    print(chunk)
+    print()
+```
+
+运行结果：
+```
+
+(.venv) PS D:\code\github\SmartRAG> & d:\code\github\SmartRAG\.venv\Scripts\python.exe d:/code/github/SmartRAG/py/textChunks_SemanticChunker.py
+d:\code\github\SmartRAG\py\textChunks_SemanticChunker.py:4: DeprecationWarning: `langchain-experimental` is being sunset and is no longer actively maintained. See https://github.com/langchain-ai/langchain-experimental/issues/87 for details.
+  from langchain_experimental.text_splitter import SemanticChunker
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights: 100%|███████████████████████████████████████████████████████████████████████████████| 71/71 [00:00<00:00, 1512.91it/s]
+✅ 原始文本长度: 192 字符
+✅ 生成块数: 3
+
+--- 块 1 ---
+人工智能是计算机科学的一个重要分支，旨在创造能够执行通常需要人类智能的任务的系统。 
+机器学习是实现人工智能的一种核心方法，它使计算机能够从数据中学习规律。 
+深度学习则是机器学习的一个子集，它使用多层神经网络来处理复杂的模式识别任务。 
+与此同时，篮球是一项广受欢迎的运动，NBA联赛汇集了全世界最顶尖的篮球运动员。
+
+--- 块 2 ---
+
+在篮球比赛中，球员们通过运球、传球和投篮来争夺分数，团队合作至关重要。
+
+--- 块 3 ---
+
+
+```
+
+## 代码到结果分析
+
+### 一、代码意图与核心参数解读
+
+这段代码旨在演示 LangChain 的 **`SemanticChunker`** 如何基于**语义相似度**进行文本分块。它完整实现了“**句子切分 → 向量化 → 计算语义距离 → 断点检测 → 合并块**”五步流程。
+
+| 参数 | 值 | 作用 |
+| :--- | :--- | :--- |
+| `embeddings` | `BAAI/bge-small-zh-v1.5` | 中文嵌入模型，将句子转为向量 |
+| `breakpoint_threshold_type` | `"percentile"` | 使用**百分位数**确定断点阈值 |
+| `breakpoint_threshold_amount` | `70` | 取相似度差值的第70百分位作为阈值 |
+| `buffer_size` | `1` | 计算句子嵌入时，前后各取1句作为上下文 |
+| `sentence_split_regex` | `r"(?<=[。！？\n])"` | 句子切分正则，**包含换行符** |
+| `add_start_index` | `True` | 在元数据中记录块起始位置 |
+
+### 二、运行结果
+
+```
+✅ 原始文本长度: 192 字符
+✅ 生成块数: 3
+
+--- 块 1 ---
+人工智能是计算机科学的一个重要分支... 
+机器学习是实现人工智能的一种核心方法... 
+深度学习则是机器学习的一个子集... 
+与此同时，篮球是一项广受欢迎的运动...
+
+--- 块 2 ---
+
+在篮球比赛中，球员们通过运球、传球和投篮来争夺分数，团队合作至关重要。
+
+--- 块 3 ---
+
+```
+
+**期望结果**：2个块（AI三句 + 篮球两句）
+**实际结果**：3个块，且块1混合了AI和篮球第一句，块2只有篮球第二句，块3为空
+
+### 三、问题根源分析
+
+#### 1. 句子切分正则包含 `\n` 导致空句子
+
+正则 `r"(?<=[。！？\n])"` 会在**句号后**和**换行后**都进行切分。原文本每行末尾是句号，然后换行，因此：
+
+- 在句号后切分：得到完整句子
+- 在换行后再次切分：产生**空字符串**或仅含换行符的片段
+
+这些空句子被送入嵌入模型，产生无意义的向量，干扰了后续的**余弦相似度**计算。
+
+#### 2. 断点检测受到干扰
+
+由于空句子的存在，相邻句子的相似度序列被污染。`percentile` 阈值计算基于包含异常值的分布，导致断点位置错误：本应在“深度学习”和“篮球”之间切分，却错误地在“篮球第一句”和“篮球第二句”之间切分。
+
+#### 3. 最终分块结果异常
+
+- **块1**：AI三句 + 篮球第一句（话题混合）
+- **块2**：空行 + 篮球第二句（含多余空行）
+- **块3**：两个空行（空块）
+
+### 四、优化方案
+
+#### 1. 修正句子切分正则（核心修复）
+
+去掉 `\n`，只保留中文标点：
+
+```python
+sentence_split_regex=r"(?<=[。！？])"
+```
+
+同时预处理文本，将换行符替换为空格，避免换行干扰：
+
+```python
+long_text = long_text.replace("\n", " ").strip()
+```
+
+#### 2. 修正后的完整代码
+
+```python
+from langchain_experimental.text_splitter import SemanticChunker
+from langchain_huggingface import HuggingFaceEmbeddings
+
+embeddings = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-small-zh-v1.5",
+    encode_kwargs={"normalize_embeddings": True}
+)
+
+text_splitter = SemanticChunker(
+    embeddings=embeddings,
+    breakpoint_threshold_type="percentile",
+    breakpoint_threshold_amount=70,
+    buffer_size=1,
+    sentence_split_regex=r"(?<=[。！？])",  # 去掉 \n
+    add_start_index=True
+)
+
+long_text = """人工智能是计算机科学的一个重要分支，旨在创造能够执行通常需要人类智能的任务的系统。
+机器学习是实现人工智能的一种核心方法，它使计算机能够从数据中学习规律。
+深度学习则是机器学习的一个子集，它使用多层神经网络来处理复杂的模式识别任务。
+与此同时，篮球是一项广受欢迎的运动，NBA联赛汇集了全世界最顶尖的篮球运动员。
+在篮球比赛中，球员们通过运球、传球和投篮来争夺分数，团队合作至关重要。"""
+
+# 预处理：去掉换行
+long_text = long_text.replace("\n", " ").strip()
+
+chunks = text_splitter.split_text(long_text)
+
+print(f"✅ 原始文本长度: {len(long_text)} 字符")
+print(f"✅ 生成块数: {len(chunks)}\n")
+for i, chunk in enumerate(chunks, 1):
+    print(f"--- 块 {i} ---")
+    print(chunk)
+    print()
+```
+
+#### 3. 预期输出
+
+```
+✅ 原始文本长度: 192 字符
+✅ 生成块数: 2
+
+--- 块 1 ---
+人工智能是计算机科学的一个重要分支... 机器学习是实现人工智能的一种核心方法... 深度学习则是机器学习的一个子集...
+
+--- 块 2 ---
+与此同时，篮球是一项广受欢迎的运动... 在篮球比赛中，球员们通过运球、传球和投篮来争夺分数...
+```
+
+### 五、参数调优建议
+
+| 参数 | 当前值 | 建议 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `sentence_split_regex` | `r"(?<=[。！？\n])"` | `r"(?<=[。！？])"` | 中文句子只需按标点切分，无需换行 |
+| `breakpoint_threshold_amount` | 70 | 70~90 | 值越大，断点越少，块越大；可根据文档密度调整 |
+| `buffer_size` | 1 | 1~2 | 值越大，嵌入包含的上下文越多，但计算量增加 |
+| 文本预处理 | 无 | 去掉换行或替换为空格 | 避免空句子干扰 |
+
+### 六、总结
+
+本次运行结果不理想，根本原因是 **`sentence_split_regex` 包含了 `\n`**，导致句子切分产生空字符串，进而干扰了**语义相似度**计算和**断点检测**。通过修正正则为 `r"(?<=[。！？])"` 并预处理文本去掉换行，即可得到正确的 2 个语义块。这也提醒我们，在使用 `SemanticChunker` 时，**中文句子切分正则必须精心设计**，避免引入空句子或异常片段。
+
+
+### 二、手动实现语义分块（完整体现五步原理）
+
+为了让你更透彻地理解每一步，下面是一个**不依赖 `SemanticChunker`** 的手动实现版本，每一步都清晰可见。
+
+```python
+# ==================== 安装依赖 ====================
+# uv pip install sentence-transformers numpy scikit-learn
+
+import re
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# ==================== 1. 句子切分 ====================
+def split_into_sentences(text):
+    """使用正则表达式将文本切分为句子（支持中文标点）"""
+    sentences = re.split(r'(?<=[。！？\n])', text)
+    return [s.strip() for s in sentences if s.strip()]
+
+# ==================== 2. 向量化 ====================
+model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
+
+def embed_sentences(sentences):
+    """将每个句子转换为嵌入向量"""
+    return model.encode(sentences, normalize_embeddings=True)
+
+# ==================== 3. 计算语义距离（余弦相似度） ====================
+def compute_similarities(embeddings):
+    """计算相邻句子向量之间的余弦相似度"""
+    similarities = []
+    for i in range(len(embeddings) - 1):
+        sim = cosine_similarity(
+            embeddings[i].reshape(1, -1),
+            embeddings[i + 1].reshape(1, -1)
+        )[0][0]
+        similarities.append(sim)
+    return similarities
+
+# ==================== 4. 断点检测 ====================
+def find_breakpoints(similarities, method="percentile", amount=70):
+    """根据相似度序列检测语义断裂点"""
+    sims = np.array(similarities)
+
+    if method == "percentile":
+        # 百分位法：相似度低于第 amount 百分位的位置为断点
+        threshold = np.percentile(sims, 100 - amount)  # 注意：相似度越低越可能是断点
+        breakpoints = [i for i, s in enumerate(sims) if s < threshold]
+
+    elif method == "standard_deviation":
+        # 标准差法：低于 均值 - amount * 标准差 的位置为断点
+        mean = np.mean(sims)
+        std = np.std(sims)
+        threshold = mean - amount * std
+        breakpoints = [i for i, s in enumerate(sims) if s < threshold]
+
+    elif method == "interquartile":
+        # 四分位距法：低于 Q1 - 1.5 * IQR 的位置为断点
+        q1, q3 = np.percentile(sims, [25, 75])
+        iqr = q3 - q1
+        threshold = q1 - 1.5 * iqr
+        breakpoints = [i for i, s in enumerate(sims) if s < threshold]
+
+    else:
+        raise ValueError(f"未知的断点检测方法: {method}")
+
+    return breakpoints, threshold
+
+# ==================== 5. 合并块 ====================
+def merge_into_chunks(sentences, breakpoints):
+    """根据断点将句子合并为语义连贯的块"""
+    chunks = []
+    start = 0
+    for bp in breakpoints:
+        chunk = "".join(sentences[start:bp + 1])
+        if chunk.strip():
+            chunks.append(chunk.strip())
+        start = bp + 1
+    # 处理最后一个块
+    if start < len(sentences):
+        chunks.append("".join(sentences[start:]).strip())
+    return chunks
+
+# ==================== 完整流程 ====================
+text = """人工智能是计算机科学的一个重要分支，旨在创造能够执行通常需要人类智能的任务的系统。
+机器学习是实现人工智能的一种核心方法，它使计算机能够从数据中学习规律。
+深度学习则是机器学习的一个子集，它使用多层神经网络来处理复杂的模式识别任务。
+与此同时，篮球是一项广受欢迎的运动，NBA联赛汇集了全世界最顶尖的篮球运动员。
+在篮球比赛中，球员们通过运球、传球和投篮来争夺分数，团队合作至关重要。"""
+
+# 步骤 1：句子切分
+sentences = split_into_sentences(text)
+print("=== 步骤 1：句子切分 ===")
+for i, s in enumerate(sentences):
+    print(f"  句子 {i}: {s}")
+print()
+
+# 步骤 2：向量化
+embeddings = embed_sentences(sentences)
+print(f"=== 步骤 2：向量化 ===")
+print(f"  共生成 {len(embeddings)} 个向量，每个向量维度: {embeddings[0].shape[0]}")
+print()
+
+# 步骤 3：计算语义距离
+similarities = compute_similarities(embeddings)
+print("=== 步骤 3：计算相邻句子余弦相似度 ===")
+for i, sim in enumerate(similarities):
+    print(f"  句子{i} ↔ 句子{i+1}: 相似度 = {sim:.4f}")
+print()
+
+# 步骤 4：断点检测
+breakpoints, threshold = find_breakpoints(similarities, method="percentile", amount=70)
+print("=== 步骤 4：断点检测（百分位法） ===")
+print(f"  断点阈值 = {threshold:.4f}")
+print(f"  检测到的断点索引: {breakpoints}")
+for bp in breakpoints:
+    print(f"    → 在句子{bp}和句子{bp+1}之间切分")
+print()
+
+# 步骤 5：合并块
+chunks = merge_into_chunks(sentences, breakpoints)
+print("=== 步骤 5：合并块 ===")
+for i, chunk in enumerate(chunks, 1):
+    print(f"  块 {i}: {chunk}")
+    print()
+```
+
+**运行输出示例**：
+
+```
+(.venv) PS D:\code\github\SmartRAG> & d:\code\github\SmartRAG\.venv\Scripts\python.exe d:/code/github/SmartRAG/py/textChunks_SemanticChunker2.py
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████| 71/71 [00:00<00:00, 562.67it/s]
+=== 步骤 1：句子切分 ===
+  句子 0: 人工智能是计算机科学的一个重要分支，旨在创造能够执行通常需要人类智能的任务的系统。
+  句子 1: 机器学习是实现人工智能的一种核心方法，它使计算机能够从数据中学习规律。
+  句子 2: 深度学习则是机器学习的一个子集，它使用多层神经网络来处理复杂的模式识别任务。
+  句子 3: 与此同时，篮球是一项广受欢迎的运动，NBA联赛汇集了全世界最顶尖的篮球运动员。
+  句子 4: 在篮球比赛中，球员们通过运球、传球和投篮来争夺分数，团队合作至关重要。
+
+=== 步骤 2：向量化 ===
+  共生成 5 个向量，每个向量维度: 512
+
+=== 步骤 3：计算相邻句子余弦相似度 ===
+  句子0 ↔ 句子1: 相似度 = 0.7534
+  句子1 ↔ 句子2: 相似度 = 0.7329
+  句子2 ↔ 句子3: 相似度 = 0.3261
+  句子3 ↔ 句子4: 相似度 = 0.6829
+
+=== 步骤 4：断点检测（百分位法） ===
+  断点阈值 = 0.6472
+  检测到的断点索引: [2]
+    → 在句子2和句子3之间切分
+
+=== 步骤 5：合并块 ===
+  块 1: 人工智能是计算机科学的一个重要分支，旨在创造能够执行通常需要人类智能的任务的系统。机器学习是实现人工智能的一种核心方法，它使计算机能够从数据中学习规律。深度学习则是机器学习的一个子集，它使用多层神经网络来处理复杂的模式识别任务。
+
+  块 2: 与此同时，篮球是一项广受欢迎的运动，NBA联赛汇集了全世界最顶尖的篮球运动员。在篮球比赛中，球员们通过运球、传球和投篮来争夺分数，团队合作至关重要。
+
+
+```
+## 代码到运行结果分析（手动实现语义分块）
+
+### 一、代码逐层解析
+
+这段代码**不依赖 `SemanticChunker`**，而是手动实现了语义分块的完整五步流程，每一步都清晰可见，非常适合理解**语义分块（Semantic Chunking）** 的底层原理。
+
+#### 1. 句子切分
+
+```python
+def split_into_sentences(text):
+    sentences = re.split(r'(?<=[。！？\n])', text)
+    return [s.strip() for s in sentences if s.strip()]
+```
+
+- **正则含义**：`(?<=[。！？\n])` 是**正向后行断言**，表示在中文句号、感叹号、问号或换行符**之后**进行切分。
+- **过滤机制**：`if s.strip()` 会过滤掉空字符串。由于原文本每行末尾是句号后跟换行，正则会先切出完整句子，再在换行处切出空串，空串被过滤，因此最终得到 **5 个完整句子**，无空块干扰。
+- **关键点**：正则包含 `\n` 本身不是问题，但**必须配合过滤**，否则会产生空句子。
+
+#### 2. 向量化
+
+```python
+model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
+def embed_sentences(sentences):
+    return model.encode(sentences, normalize_embeddings=True)
+```
+
+- **`SentenceTransformer`**：加载**嵌入模型（Embedding Model）**，将每个句子转换为**向量（Vector）**。
+- **`normalize_embeddings=True`**：对向量进行**归一化**，使**余弦相似度（Cosine Similarity）** 计算更稳定。
+- **输出**：5 个 512 维向量（`bge-small-zh-v1.5` 的向量维度为 512）。
+
+#### 3. 计算语义距离
+
+```python
+def compute_similarities(embeddings):
+    similarities = []
+    for i in range(len(embeddings) - 1):
+        sim = cosine_similarity(...)
+        similarities.append(sim)
+    return similarities
+```
+
+- **`余弦相似度`**：衡量两个向量在语义空间中方向的一致程度，值越接近 1 表示语义越相似。
+- **计算对象**：相邻句子之间的相似度，共 4 个值。
+
+#### 4. 断点检测
+
+```python
+def find_breakpoints(similarities, method="percentile", amount=70):
+    if method == "percentile":
+        threshold = np.percentile(sims, 100 - amount)
+        breakpoints = [i for i, s in enumerate(sims) if s < threshold]
+```
+
+- **`百分位数（Percentile）`**：将相似度数组排序后，取第 `100 - amount` 百分位作为**断点阈值**。
+- **逻辑**：相似度**低于**阈值的位置，判定为**语义断裂点（Semantic Breakpoint）**。
+- **本示例参数**：`amount=70` → `threshold = np.percentile(sims, 30)`。
+
+#### 5. 合并块
+
+```python
+def merge_into_chunks(sentences, breakpoints):
+    chunks = []
+    start = 0
+    for bp in breakpoints:
+        chunk = "".join(sentences[start:bp + 1])
+        chunks.append(chunk.strip())
+        start = bp + 1
+    if start < len(sentences):
+        chunks.append("".join(sentences[start:]).strip())
+    return chunks
+```
+
+- **逻辑**：根据断点索引，将句子序列切分为多个块。
+- **本示例**：断点索引为 `[2]`，因此在句子2和句子3之间切分。
+
+### 二、运行结果解读
+
+```
+=== 步骤 1：句子切分 ===
+  句子 0: 人工智能是计算机科学的一个重要分支...
+  句子 1: 机器学习是实现人工智能的一种核心方法...
+  句子 2: 深度学习则是机器学习的一个子集...
+  句子 3: 与此同时，篮球是一项广受欢迎的运动...
+  句子 4: 在篮球比赛中，球员们通过运球、传球...
+
+=== 步骤 2：向量化 ===
+  共生成 5 个向量，每个向量维度: 512
+
+=== 步骤 3：计算相邻句子余弦相似度 ===
+  句子0 ↔ 句子1: 相似度 = 0.7534
+  句子1 ↔ 句子2: 相似度 = 0.7329
+  句子2 ↔ 句子3: 相似度 = 0.3261  ← 语义断裂点
+  句子3 ↔ 句子4: 相似度 = 0.6829
+
+=== 步骤 4：断点检测（百分位法） ===
+  断点阈值 = 0.6472
+  检测到的断点索引: [2]
+    → 在句子2和句子3之间切分
+
+=== 步骤 5：合并块 ===
+  块 1: 人工智能... 机器学习... 深度学习...
+  块 2: 与此同时，篮球... 在篮球比赛中...
+```
+
+**结果分析**：
+
+| 指标 | 值 | 说明 |
+| :--- | :--- | :--- |
+| 句子总数 | 5 | 切分正确，无空句子 |
+| 相似度最低值 | 0.3261 | 出现在句子2和句子3之间，对应“深度学习”与“篮球”的话题切换 |
+| 断点阈值 | 0.6472 | 由百分位法计算得出 |
+| 断点位置 | 索引 2 | 正确识别了**语义断裂点** |
+| 最终块数 | 2 | 块1为AI三句，块2为篮球两句 |
+| 分块质量 | **完美** | 与人工判断一致 |
+
+**关键结论**：手动实现版本成功展示了**语义分块**的核心机制——通过**嵌入向量**和**余弦相似度**检测话题切换，在**语义断裂点**处切分，将语义相近的句子聚合为块。
+
+### 三、关键参数与原理对应
+
+| 参数 | 值 | 对应原理 |
+| :--- | :--- | :--- |
+| `sentence_split_regex` | `r'(?<=[。！？\n])'` | **句子切分**：按中文标点和换行切分 |
+| `normalize_embeddings` | `True` | **向量化**：归一化，使余弦相似度更稳定 |
+| `cosine_similarity` | 相邻句子 | **计算语义距离**：量化句子间的语义相似度 |
+| `method="percentile"` | 百分位法 | **断点检测**：基于相似度分布确定阈值 |
+| `amount=70` | 第70百分位 | 阈值 = 第30百分位（100-70），低于此值判为断点 |
+| `merge_into_chunks` | 按断点合并 | **合并块**：将连续句子组合为语义块 |
+
+### 四、与 `SemanticChunker` 对比
+
+| 维度 | 手动实现 | `SemanticChunker` |
+| :--- | :--- | :--- |
+| **可控性** | 高，每步可调 | 中，受封装限制 |
+| **空句子处理** | 显式过滤，安全 | 依赖内部正则，易产生空块 |
+| **参数调整** | 灵活修改阈值逻辑 | 仅能通过 `breakpoint_threshold_type` 等参数调整 |
+| **适用场景** | 学习原理、深度定制 | 快速原型、标准流程 |
+| **弃用警告** | 无 | 有（`langchain-experimental` 已日落） |
+
+**结论**：手动实现版本不仅运行正确，还避免了 `SemanticChunker` 因正则问题产生的空块，更适合深入理解和定制。
+
+### 五、优化项（为生产开发准备）
+
+| 方向 | 说明 |
+| :--- | :--- |
+| **缓存句子嵌入** | 离线计算并缓存所有句子的向量，避免重复调用嵌入模型 |
+| **批量处理** | 对大规模文档集，使用 `model.encode(sentences, batch_size=32)` 加速 |
+| **轻量模型** | 使用 `all-MiniLM-L6-v2`（384维）降低计算成本 |
+| **多阈值策略** | 结合百分位、标准差、四分位距，取交集或加权投票 |
+| **动态阈值** | 根据文档长度和话题密度自适应调整 `amount` |
+| **混合分块** | 先用 `RecursiveCharacterTextSplitter` 粗切，再对每个粗块做语义分块 |
+| **效果评估** | 构建测试集，用**命中率（Hit Rate）**、**MRR** 评估分块质量 |
+| **生产替代** | 迁移到 `chonkie` 等活跃维护的语义分块库 |
+
+### 六、总结
+
+本次手动实现完整演示了**语义分块**的五步流程，运行结果**完美**：相似度计算准确捕捉到“深度学习”与“篮球”之间的**语义断裂点**，断点检测正确，最终分块与人工判断一致。相比 `SemanticChunker`，手动版本更可控，且避免了空块问题。该代码可作为学习语义分块原理的**标准范例**，也可在此基础上扩展为生产级分块器。
+
 
 **参考文献与出处**：
 
