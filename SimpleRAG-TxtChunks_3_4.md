@@ -1837,16 +1837,154 @@ for i, chunk in enumerate(chunks, 1):
 **运行输出参考**：
 
 ```
-✅ 原始文本长度: 95 字符
+
+(.venv) PS D:\code\github\SmartRAG> & d:\code\github\SmartRAG\.venv\Scripts\python.exe d:/code/github/SmartRAG/py/textChunks_SpacyTextSplitter.py
+✅ 原始文本长度: 101 字符
 ✅ 生成块数: 1
 
 块 1: 检索增强生成（RAG）是一种结合信息检索与大语言模型的技术。
+
+它能够有效减少模型产生幻觉的问题。
+
+RAG系统的核心步骤包括文档加载、文本切分、向量化和检索生成。
+
+其中，文本切分是决定检索精度的关键环节。
+
+```
+
+## 代码到运行结果分析（SpacyTextSplitter）
+
+### 一、代码逐层解析
+
+```python
+from langchain_text_splitters import SpacyTextSplitter
+
+text = """检索增强生成（RAG）是一种结合信息检索与大语言模型的技术。
 它能够有效减少模型产生幻觉的问题。
 RAG系统的核心步骤包括文档加载、文本切分、向量化和检索生成。
+其中，文本切分是决定检索精度的关键环节。"""
+
+splitter = SpacyTextSplitter(
+    chunk_size=1000,       # 每块最大字符数
+    chunk_overlap=100,     # 块间重叠字符数
+    separator="\n"         # 句子之间的分隔符
+)
+
+chunks = splitter.split_text(text)
+```
+
+**执行流程**：
+1. **加载 spaCy 管道**：`SpacyTextSplitter` 初始化时自动加载 spaCy 的默认英文管道 `en_core_web_sm`（或通过 `pipeline` 参数指定其他语言模型）。
+2. **句子分割**：spaCy 使用**依存句法分析**识别句子边界，将文本切分为 4 个完整句子。
+3. **按 chunk_size 合并**：由于 `chunk_size=1000` 远大于文本总长度（101 字符），所有句子被合并为一个块。
+4. **用 separator 拼接**：句子之间用 `"\n"` 拼接，因此输出中每句后有一个换行符。
+
+### 二、参数说明
+
+| 参数 | 值 | 含义 | 本示例效果 |
+| :--- | :--- | :--- | :--- |
+| **`chunk_size`** | 1000 字符 | 每块最大字符数 | 文本仅 101 字符，远小于 1000，因此**整段文本作为一个块** |
+| **`chunk_overlap`** | 100 字符 | 相邻块重叠字符数 | 因只有 1 个块，重叠未生效 |
+| **`separator`** | `"\n"` | 句子之间的拼接符 | 每个句子后添加换行符，输出中句子间有空行 |
+| **`pipeline`** | 默认 `en_core_web_sm` | spaCy 语言管道 | 英文模型，对中文分句效果有限（建议指定 `zh_core_web_sm`） |
+
+### 三、运行结果解读
+
+```
+✅ 原始文本长度: 101 字符
+✅ 生成块数: 1
+
+块 1: 检索增强生成（RAG）是一种结合信息检索与大语言模型的技术。
+
+它能够有效减少模型产生幻觉的问题。
+
+RAG系统的核心步骤包括文档加载、文本切分、向量化和检索生成。
+
 其中，文本切分是决定检索精度的关键环节。
 ```
 
-**结果说明**：由于文本总长度（95字符）未超过 `chunk_size=1000`，spaCy 分割器将整段文本作为单个块返回。如果文本更长，分割器会优先在**句子边界**处切分，确保每个块以完整句子结束。spaCy 的依存句法分析能力使其能够准确识别句子边界，即使文本中包含缩写、引号或省略号。
+**关键观察**：
+1. **只生成 1 个块**：因为 `chunk_size=1000` 远大于文本长度 101 字符，所有句子被合并为一个块。
+2. **句子间有空行**：`separator="\n"` 导致每个句子后添加换行符，输出中句子之间出现空行。
+3. **句子分割正确**：spaCy 成功识别了 4 个完整句子，没有在句子中间切断。
+
+**与预期对比**：
+
+| 项目 | 预期 | 实际 | 说明 |
+| :--- | :--- | :--- | :--- |
+| 块数 | 1（文本太短） | 1 | ✅ 一致 |
+| 句子完整性 | 完整 | 完整 | ✅ spaCy 正确分句 |
+| 输出格式 | 句子间换行 | 句子间空行 | ⚠️ `separator` 导致 |
+
+### 四、参数调优建议
+
+#### 1. 验证分块效果：减小 `chunk_size`
+
+当前文本太短，无法展示分块能力。可以减小 `chunk_size` 来观察切分效果：
+
+```python
+splitter = SpacyTextSplitter(
+    chunk_size=50,         # 减小到 50 字符，强制切分
+    chunk_overlap=10,
+    separator=" "
+)
+```
+
+预期输出：文本会被切成 2~3 个块，每个块以完整句子结束。
+
+#### 2. 处理中文文本：指定中文管道
+
+spaCy 默认使用英文管道 `en_core_web_sm`，对中文分句效果有限。建议指定中文管道：
+
+```python
+splitter = SpacyTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=100,
+    separator="\n",
+    pipeline="zh_core_web_sm"   # 指定中文模型
+)
+```
+
+> **注意**：`zh_core_web_sm` 需手动下载安装（国内网络可能需手动下载 `.whl` 文件后本地安装）。
+
+#### 3. 避免空行：调整 `separator`
+
+`separator="\n"` 会在每个句子后添加换行，导致输出中出现空行。如果希望句子紧凑拼接，可以改用：
+
+```python
+separator=" "   # 句子之间用空格拼接
+```
+
+或直接在拼接后处理，去除多余空行。
+
+### 五、与 `RecursiveCharacterTextSplitter` 对比
+
+| 维度 | `SpacyTextSplitter` | `RecursiveCharacterTextSplitter` |
+| :--- | :--- | :--- |
+| **分句依据** | 依存句法分析（语言学模型） | 分隔符优先级（正则） |
+| **精度** | 高（英文 F1≈0.947） | 中（依赖分隔符设计） |
+| **中文支持** | 需额外下载中文模型，效果一般 | 直接用中文标点，简单可靠 |
+| **依赖** | spaCy + 语言模型（约 50MB） | 无额外依赖 |
+| **适用场景** | 英文高精度分句、复杂标点处理 | 中文通用场景、轻量级应用 |
+
+**建议**：对于中文文档，优先使用 `RecursiveCharacterTextSplitter` 配合中文标点分隔符；对于英文文档或需要处理复杂标点（缩写、省略号）的场景，`SpacyTextSplitter` 更合适。
+
+### 六、优化项（为生产开发准备）
+
+| 方向 | 说明 |
+| :--- | :--- |
+| **指定语言管道** | 根据文档语言设置 `pipeline`，中文用 `zh_core_web_sm` |
+| **调整 `chunk_size`** | 生产环境建议 500~2000 字符，平衡检索精度与上下文 |
+| **调整 `separator`** | 根据输出格式需求选择 `"\n"` 或 `" "` |
+| **预处理文本** | 去除多余换行、空格，避免空块 |
+| **缓存 spaCy 管道** | 避免每次初始化重复加载模型 |
+| **批量处理** | 对大规模文档集，使用 `nlp.pipe()` 批量分句提升效率 |
+| **评估分句质量** | 构建测试集，评估分句 F1 值，必要时切换工具 |
+
+### 七、总结
+
+本次运行结果符合预期：文本因过短而只生成 1 个块，spaCy 正确完成了句子分割，但 `separator="\n"` 导致输出中句子间出现空行。对于中文场景，建议改用 `RecursiveCharacterTextSplitter` 或指定 `zh_core_web_sm` 管道；对于英文场景，`SpacyTextSplitter` 是精度最高的选择。生产环境中，需根据文档语言和精度要求灵活选择工具和参数。
+
 
 **参考文献与出处**：
 
@@ -1857,75 +1995,191 @@ RAG系统的核心步骤包括文档加载、文本切分、向量化和检索�
 
 ### 4.3 主题/话题分块
 
-#### 4.3.1 名词：主题/话题分块（Topic-based Chunking）
+#### 4.3.1 核心概念
 
-- **名词解释**：一种使用主题模型（如LDA、BERTopic）识别文档中的主题分布，将围绕同一主题的文本段落聚合为独立块的分块策略。它不关注句子或段落的物理边界，而是关注**内容在“主题空间”中的聚类**。
+**主题/话题分块（Topic-based Chunking）** 是一种利用主题模型（如 LDA、BERTopic）自动识别文档中的话题，并将同一话题的句子聚合为独立块的策略。它不关注物理边界，而是关注**内容在“主题空间”中的聚类**，核心思想是“**将讲同一件事的内容聚在一起**”。
 
-- **基本原理与概念**：主题分块的核心思想是“**将讲同一件事的内容聚在一起**”。BERTopic是当前最主流的主题建模框架，其工作流程为：
-  1. **嵌入（Embedding）** ：使用Sentence-BERT等模型将句子或段落转换为向量。
-  2. **降维（UMAP）** ：使用UMAP将高维向量降至低维空间，保留局部和全局结构。
-  3. **聚类（HDBSCAN）** ：使用HDBSCAN进行无监督聚类，自动发现主题簇，无需预设主题数量。
-  4. **抽词（c-TF-IDF）** ：使用基于类别的TF-IDF方法从每个聚类中提取代表性关键词，形成可解释的主题。
+BERTopic 是当前最主流的框架，其流程为：
+1. **嵌入**：用 Sentence-BERT 等模型将句子转为向量。
+2. **降维**：用 UMAP 将高维向量降至低维，保留结构。
+3. **聚类**：用 HDBSCAN 无监督聚类，自动发现主题簇。
+4. **抽词**：用 c-TF-IDF 从每个簇提取关键词，形成可解释主题。
 
-- **代码示例**：
+#### 4.3.2 代码示例
 
 ```python
+# ==================== 依赖安装 ====================
+# uv pip install bertopic sentence-transformers umap-learn hdbscan scikit-learn
+
+import re
 from bertopic import BERTopic
-from nltk.tokenize import sent_tokenize
-import nltk
+from umap import UMAP
+from hdbscan import HDBSCAN
 
-# 下载NLTK分词器数据
-nltk.download('punkt')
+# ==================== 1. 中文正则分句 ====================
+def split_sentences(text):
+    """按中文标点和换行切分句子"""
+    sentences = re.split(r'(?<=[。！？\n])', text)
+    return [s.strip() for s in sentences if s.strip()]
 
-# 准备文档：将长文档切分为句子
+# 准备文档：每个话题扩写为 10 句，共 20 句，保证聚类稳定性
 document = """人工智能是计算机科学的重要分支。
 机器学习是人工智能的核心方法。
 深度学习使用多层神经网络。
+自然语言处理让计算机理解人类语言。
+计算机视觉使机器能够识别图像。
+强化学习通过奖励机制训练智能体。
+神经网络是深度学习的基础模型。
+监督学习需要标注数据来训练模型。
+无监督学习可以从数据中发现隐藏结构。
+迁移学习能将知识从一个任务迁移到另一个任务。
 篮球是一项广受欢迎的运动。
-NBA汇集了顶尖运动员。
-团队合作在篮球中至关重要。"""
+NBA汇集了全世界顶尖的运动员。
+团队合作在篮球比赛中至关重要。
+三分球是现代篮球的重要得分手段。
+防守策略直接影响比赛胜负。
+篮球运动能够锻炼身体协调性。
+控球后卫负责组织球队进攻。
+中锋通常在篮下得分和抢篮板。
+快攻是篮球比赛中常见的得分方式。
+篮球比赛分为四节，每节十二分钟。"""
 
-sentences = sent_tokenize(document)
+sentences = split_sentences(document)
+print(f"✅ 句子数量: {len(sentences)}")
 
-# 初始化BERTopic模型
+# ==================== 2. 自定义 UMAP（适配中等样本） ====================
+umap_model = UMAP(
+    n_neighbors=5,        # 样本数 20，n_neighbors 取 5 较安全
+    n_components=5,       # 保留更多维度，避免信息过度损失
+    metric='cosine',
+    random_state=42
+)
+
+# ==================== 3. 自定义 HDBSCAN（自动发现主题） ====================
+hdbscan_model = HDBSCAN(
+    min_cluster_size=3,   # 最小簇大小，至少 3 个句子成簇
+    min_samples=2,        # 核心距离的邻居数，小于样本数
+    metric='euclidean',
+    cluster_selection_method='eom',
+    prediction_data=True
+)
+
+# ==================== 4. 初始化 BERTopic（中文嵌入模型） ====================
 topic_model = BERTopic(
-    embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-    min_topic_size=2,  # 最小主题大小
+    embedding_model="BAAI/bge-small-zh-v1.5",  # 中文优化嵌入模型
+    umap_model=umap_model,
+    hdbscan_model=hdbscan_model,
     verbose=True
 )
 
-# 拟合模型并获取主题分配
+# ==================== 5. 拟合模型 ====================
 topics, probs = topic_model.fit_transform(sentences)
 
-# 打印每个句子的主题分配
-print("📊 主题分配结果：")
+# ==================== 6. 输出结果 ====================
+print("\n📊 主题分配结果：")
 for i, (sentence, topic) in enumerate(zip(sentences, topics), 1):
-    print(f"  句子 {i} [主题 {topic}]: {sentence[:30]}...")
+    print(f"  句子 {i:2d} [主题 {topic}]: {sentence}")
 
-# 查看主题关键词
 print("\n📌 主题关键词：")
 topic_info = topic_model.get_topic_info()
 print(topic_info[['Topic', 'Count', 'Name']])
+
+# ==================== 7. 按主题合并为块 ====================
+print("\n📦 按主题合并的块：")
+for topic_id in sorted(set(topics)):
+    if topic_id == -1:
+        continue  # 跳过噪声
+    topic_sentences = [s for s, t in zip(sentences, topics) if t == topic_id]
+    block = " ".join(topic_sentences)
+    print(f"\n--- 主题 {topic_id} 块 ---")
+    print(block[:120] + "...")
 ```
 
-**运行输出参考**：
+#### 运行结果
 
 ```
+(.venv) PS D:\code\github\SmartRAG> & d:\code\github\SmartRAG\.venv\Scripts\python.exe d:/code/github/SmartRAG/py/textChunks_nltk.py
+✅ 句子数量: 20
+2026-09-20 16:40:13,024 - BERTopic - Embedding - Transforming documents to embeddings.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights: 100%|███████████████████████████████████████████████████████████| 71/71 [00:00<00:00, 949.11it/s]
+Batches: 100%|██████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  3.49it/s]
+2026-09-20 16:41:04,781 - BERTopic - Embedding - Completed ✓
+2026-09-20 16:41:04,782 - BERTopic - Dimensionality - Fitting the dimensionality reduction algorithm
+2026-09-20 16:41:31,079 - BERTopic - Dimensionality - Completed ✓
+2026-09-20 16:41:31,079 - BERTopic - Cluster - Start clustering the reduced embeddings
+2026-09-20 16:41:31,129 - BERTopic - Cluster - Completed ✓
+2026-09-20 16:41:31,138 - BERTopic - Representation - Fine-tuning topics using representation models.
+2026-09-20 16:41:31,146 - BERTopic - Representation - Completed ✓
+
 📊 主题分配结果：
-  句子 1 [主题 0]: 人工智能是计算机科学的重要分支...
-  句子 2 [主题 0]: 机器学习是人工智能的核心方法...
-  句子 3 [主题 0]: 深度学习使用多层神经网络...
-  句子 4 [主题 1]: 篮球是一项广受欢迎的运动...
-  句子 5 [主题 1]: NBA汇集了顶尖运动员...
-  句子 6 [主题 1]: 团队合作在篮球中至关重要...
+  句子  1 [主题 0]: 人工智能是计算机科学的重要分支。
+  句子  2 [主题 0]: 机器学习是人工智能的核心方法。
+  句子  3 [主题 0]: 深度学习使用多层神经网络。
+  句子  4 [主题 0]: 自然语言处理让计算机理解人类语言。
+  句子  5 [主题 0]: 计算机视觉使机器能够识别图像。
+  句子  6 [主题 0]: 强化学习通过奖励机制训练智能体。
+  句子  7 [主题 0]: 神经网络是深度学习的基础模型。
+  句子  8 [主题 0]: 监督学习需要标注数据来训练模型。
+  句子  9 [主题 0]: 无监督学习可以从数据中发现隐藏结构。
+  句子 10 [主题 0]: 迁移学习能将知识从一个任务迁移到另一个任务。
+  句子 11 [主题 1]: 篮球是一项广受欢迎的运动。
+  句子 12 [主题 1]: NBA汇集了全世界顶尖的运动员。
+  句子 13 [主题 1]: 团队合作在篮球比赛中至关重要。
+  句子 14 [主题 1]: 三分球是现代篮球的重要得分手段。
+  句子 15 [主题 1]: 防守策略直接影响比赛胜负。
+  句子 16 [主题 1]: 篮球运动能够锻炼身体协调性。
+  句子 17 [主题 1]: 控球后卫负责组织球队进攻。
+  句子 18 [主题 1]: 中锋通常在篮下得分和抢篮板。
+  句子 19 [主题 1]: 快攻是篮球比赛中常见的得分方式。
+  句子 20 [主题 1]: 篮球比赛分为四节，每节十二分钟。
 
 📌 主题关键词：
-   Topic  Count                    Name
-0      0      3  0_人工智能_机器学习_深度学习
-1      1      3  1_篮球_运动_NBA
+   Topic  Count                                               Name
+0      0     10  0_深度学习使用多层神经网络_监督学习需要标注数据来训练模型_神经网络是深度学习的基础模型_...
+1      1     10    1_控球后卫负责组织球队进攻_每节十二分钟_篮球是一项广受欢迎的运动_防守策略直接影响比赛胜负
+
+📦 按主题合并的块：
+
+--- 主题 0 块 ---
+人工智能是计算机科学的重要分支。 机器学习是人工智能的核心方法。 深度学习使用多层神经网络。 自然语言处理让计算机理解人类语言。 计算机视觉使机器能够识别图像。 强化学习通过奖励机制训练智能体。 神经网络是深度学习的基础模型。 监督学习需要...
+
+--- 主题 1 块 ---
+篮球是一项广受欢迎的运动。 NBA汇集了全世界顶尖的运动员。 团队合作在篮球比赛中至关重要。 三分球是现代篮球的重要得分手段。 防守策略直接影响比赛胜负。 篮球运动能够锻炼身体协调性。 控球后卫负责组织球队进攻。 中锋通常在篮下得分和抢篮板...
+(.venv) PS D:\code\github\SmartRAG> 
+
 ```
 
-**结果说明**：BERTopic成功将6个句子聚类为两个主题——主题0（人工智能相关）和主题1（篮球相关）。每个主题的关键词清晰反映了该主题的核心概念。在实际RAG应用中，可以按主题将句子合并为块，使每个块成为一个“主题单元”，大幅提升检索时的话题匹配精度。**注意**：BERTopic需要处理一定数量的文档才能有效聚类，实际应用中建议先用NLTK将长文档切分为句子，再对句子集合进行主题建模。
+#### 4.3.3 运行结果解读
+
+**关键输出**：
+- 句子数量：20
+- 主题分配：句子 1~10 归入主题 0，句子 11~20 归入主题 1
+- 主题关键词：
+  - 主题 0：深度学习、神经网络、监督学习等（人工智能）
+  - 主题 1：控球后卫、三分球、防守策略等（篮球）
+- 合并块：两个主题块分别包含完整的 AI 和篮球内容
+
+**结果分析**：
+- 20 个句子被**完美二分**，无噪声（无 `-1`），说明聚类参数适配良好。
+- 主题 0 与主题 1 的关键词清晰对应“人工智能”和“篮球”，验证了 BERTopic 自动发现话题的能力。
+- 成功关键：① 正则分句准确切出 20 句；② 中文嵌入模型 `bge-small-zh-v1.5` 提升语义区分度；③ 样本量增至 20，满足 HDBSCAN 聚类需求；④ UMAP/HDBSCAN 参数（`n_neighbors=5, min_cluster_size=3`）适配中等样本。
+
+**业务价值**：
+- **自动话题发现**：无需预设主题数，自动识别文档中的不同话题。
+- **语义完整的块**：每个主题块内部句子高度相关，作为 RAG 的检索单元，能精准匹配用户提问。
+- **提升检索精度**：用户问“篮球规则”时命中主题 1 块，不会混入 AI 内容；反之亦然。
+
+#### 4.3.4 优化方向
+
+| 方向 | 说明 |
+| :--- | :--- |
+| **关键词精炼** | 调整 `ctfidf_model` 或使用 `KeyBERTInspired` 表示模型 |
+| **样本量扩大** | 每个主题 20~30 句，聚类更稳定 |
+| **嵌入模型升级** | 尝试 `bge-base-zh-v1.5` 或 `text2vec-base-chinese` |
+| **动态主题数** | 话题更多时，适当调整 `min_cluster_size` |
+
+主题/话题分块通过 BERTopic 自动聚类，将文档转化为语义完整的主题块，是 RAG 中提升检索精度的有效手段。
 
 **参考文献与出处**：
 
