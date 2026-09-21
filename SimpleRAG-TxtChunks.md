@@ -1,13 +1,13 @@
-# 简单 RAG：文本分块（精简版）
+# 简单 RAG：文本分块
 
 ## 一、技术分类大纲
 
-1. **核心目标与挑战**：粒度控制、边界效应、主题覆盖、资源效率、策略泛化、知识边界模糊。
-2. **基础/固定大小分块**：基于字符数、基于词元数。
-3. **结构感知分块**：递归字符分块、基于文档结构（Markdown/HTML/代码）、滑动窗口与父子块。
-4. **语义感知分块**：句子级语义分块、NLP工具句子分割、主题/话题分块、LLM辅助分块。
-5. **多粒度与智能分块**：多粒度索引、后期分块。
-6. **分块策略的选择与评估**：选择维度、评估方法（命中率、MRR）。
+1. **核心目标与挑战**：粒度控制、边界效应、主题覆盖、资源效率、策略泛化、知识边界模糊
+2. **基础/固定大小分块**：基于字符数、基于词元数
+3. **结构感知分块**：递归字符分块、基于文档结构、滑动窗口与父子块
+4. **语义感知分块**：句子级语义分块、NLP工具句子分割、主题/话题分块、LLM辅助分块
+5. **多粒度与智能分块**：多粒度索引、后期分块
+6. **分块策略的选择与评估**：选择维度、评估方法
 
 > 正文聚焦简单 RAG 实现，高级 RAG 后续深入。
 
@@ -18,15 +18,15 @@
 将原始文档切分为更小、易于管理的文本单元（Chunks），是 RAG 的关键预处理步骤。受 LLM 上下文窗口限制，且向量检索精度随文本长度增加而下降，需在不超过窗口的前提下尽可能保持语义完整性。
 
 ### 1.2 粒度控制（Granularity Control）
-调节每个块的信息量或文本长度。块太大引入噪音，向量被“平均化”，检索精度下降；块太小上下文不完整，指代词失去意义。核心权衡：在“足够具体以精准命中”和“足够完整以理解语境”之间找平衡。
+调节每个块的信息量或文本长度。块太大引入噪音，向量被"平均化"，检索精度下降；块太小上下文不完整，指代词失去意义。核心权衡：在"足够具体以精准命中"和"足够完整以理解语境"之间找平衡。
 
 ### 1.3 边界效应（Boundary Effect）
-切分位置不当导致完整语义单元被切断。固定长度分块易切断句子或段落。缓解策略：递归字符分块、滑动窗口（相邻块共享部分文本）。
+切分位置不当导致完整语义单元被切断。固定长度分块易切断句子或段落。缓解策略：递归字符分块、滑动窗口。
 
 ### 1.4 主题覆盖（Topic Coverage）
-确保每个块能独立、完整地代表一个子主题。好的块应像微型“独立文档”。混合话题会引入噪音，话题分散则遗漏信息。实现方向：语义分块或利用文档结构。
+确保每个块能独立、完整地代表一个子主题。好的块应像微型"独立文档"。混合话题会引入噪音，话题分散则遗漏信息。实现方向：语义分块或利用文档结构。
 
-### 补充挑战与挑战全景图
+### 挑战全景图
 
 | 挑战维度 | 核心关注点 | 解决方向 |
 | :--- | :--- | :--- |
@@ -42,7 +42,7 @@
 
 ### 2.1 基于字符数（Character-based Chunking）
 
-**核心概念**：按预设字符数机械切割。实现简单、速度快，但极易切断单词或句子，召回率和精确率较低。分隔符可优先在换行符等处切割；块重叠缓解边界效应。
+**核心概念**：按预设字符数机械切割。实现简单、速度快，但极易切断单词或句子。分隔符可优先在换行符处切割；块重叠缓解边界效应。
 
 **代码示例（手动实现）**：
 ```python
@@ -63,7 +63,7 @@ for i, chunk in enumerate(chunks):
 块2: 与大语言模型，能够有效减少模型产生幻觉的
 块3: 产生幻觉的问题。
 ```
-**分析**：块1和块2共享“与大语言模型”部分字符，缓解边界断裂。
+**分析**：块1和块2共享"与大语言模型"部分字符，缓解边界断裂。
 
 **LangChain 等效实现**：
 ```python
@@ -88,7 +88,7 @@ for i, chunk in enumerate(chunks, 1):
 块 3 (长度: 20 字符): 能够有效减少模型产生幻觉的问
 块 4 (长度: 6 字符): 的问题。
 ```
-**分析**：块1和块2共享“了信息”，有效缓解边界信息断裂。
+**分析**：块1和块2共享"了信息"，有效缓解边界信息断裂。
 
 
 ### 2.2 基于词元数（Token-based Chunking）
@@ -173,7 +173,7 @@ for i, chunk in enumerate(chunks, 1):
 块 2 (长度: 29 字符): 它能够有效减少模型产生幻觉的问题。RAG系统的核心步骤包括
 块 3 (长度: 24 字符): 心步骤包括文档加载、文本切分、向量化和检索生成。
 ```
-**分析**：优先在换行符处切分，块3因第三段超长被进一步切割，开头“心步骤”是“核心步骤”的截断。
+**分析**：优先在换行符处切分，块3因第三段超长被进一步切割，开头"心步骤"是"核心步骤"的截断。
 
 
 ### 3.2 基于文档结构
@@ -373,7 +373,7 @@ for item in parent_child_map:
 文本切分将长文档拆分为语义完整的块。
 向量化使用嵌入模型将文本转为数值向量。
 ```
-**分析**：查询“向量化”命中了包含该关键词的子块，系统返回其所属父块1的完整内容，验证了“小检索、大生成”机制。
+**分析**：查询"向量化"命中了包含该关键词的子块，系统返回其所属父块1的完整内容，验证了"小检索、大生成"机制。
 
 **参数说明**：
 
@@ -446,7 +446,7 @@ for i, doc in enumerate(retrieved_docs, 1):
 向量化：使用嵌入模型将文本转为数值向量。
 检索生成：根据用户问题找到相关块并交给LLM。
 ```
-**分析**：文档总长约110字符，父块`chunk_size=200`使整篇文档成为一个父块。查询命中了包含“向量化”的子块，系统返回完整父块，包含全部RAG步骤上下文。
+**分析**：文档总长约110字符，父块`chunk_size=200`使整篇文档成为一个父块。查询命中了包含"向量化"的子块，系统返回完整父块，包含全部RAG步骤上下文。
 
 **改进对比**：
 
@@ -461,7 +461,7 @@ for i, doc in enumerate(retrieved_docs, 1):
 
 ### 4.1 句子级语义分块
 
-**核心概念**：基于语义相似度动态确定分块边界。工作流程：句子切分 → 向量化 → 计算语义距离 → 断点检测 → 合并块。核心思想：“按意思切，不按长度切”。断点检测方式：百分位数、标准差、四分位距。
+**核心概念**：基于语义相似度动态确定分块边界。工作流程：句子切分 → 向量化 → 计算语义距离 → 断点检测 → 合并块。核心思想："按意思切，不按长度切"。断点检测方式：百分位数、标准差、四分位距。
 
 **SemanticChunker 标准实现**：
 ```python
@@ -508,7 +508,7 @@ for i, chunk in enumerate(chunks, 1):
 --- 块 2 ---
 与此同时，篮球是一项广受欢迎的运动，NBA联赛汇集了全世界最顶尖的篮球运动员。 在篮球比赛中，球员们通过运球、传球和投篮来争夺分数，团队合作至关重要。
 ```
-**分析**：修正 `sentence_split_regex` 去掉 `\n` 后，切分点正确落在“深度学习”和“篮球”之间，得到2个语义块。原正则包含 `\n` 会产生空句子，导致块混合和空块。
+**分析**：修正 `sentence_split_regex` 去掉 `\n` 后，切分点正确落在"深度学习"和"篮球"之间，得到2个语义块。原正则包含 `\n` 会产生空句子，导致块混合和空块。
 
 **手动实现（完整体现五步原理）**：
 ```python
@@ -657,7 +657,7 @@ RAG系统的核心步骤包括文档加载、文本切分、向量化和检索�
 
 ### 4.3 主题/话题分块
 
-**核心概念**：利用BERTopic等主题模型自动识别文档中的话题，将同一话题的句子聚合为独立块。核心思想：“将讲同一件事的内容聚在一起”。BERTopic流程：嵌入 → UMAP降维 → HDBSCAN聚类 → c-TF-IDF抽词。
+**核心概念**：利用BERTopic等主题模型自动识别文档中的话题，将同一话题的句子聚合为独立块。核心思想："将讲同一件事的内容聚在一起"。BERTopic流程：嵌入 → UMAP降维 → HDBSCAN聚类 → c-TF-IDF抽词。
 
 ```python
 import re
@@ -762,7 +762,7 @@ for topic_id in sorted(set(topics)):
 
 ### 4.4 LLM辅助分块
 
-**核心概念**：利用LLM的语义理解能力直接判断文本语义边界。核心思想：“让模型理解文档，而不是让规则切割文本”。主要方式：边界判断、语义合并、注意力图分析。相比语义分块，能理解因果、转折等复杂关系，但速度慢10~50倍。
+**核心概念**：利用LLM的语义理解能力直接判断文本语义边界。核心思想："让模型理解文档，而不是让规则切割文本"。主要方式：边界判断、语义合并、注意力图分析。相比语义分块，能理解因果、转折等复杂关系，但速度慢10~50倍。
 
 **通用版本（ChatOpenAI 兼容 DeepSeek）** ：
 ```python
@@ -839,7 +839,7 @@ for i, chunk in enumerate(chunks, 1):
 NBA汇集了全世界顶尖运动员。
 团队合作在篮球比赛中至关重要。
 ```
-**分析**：LLM准确在“深度学习”和“篮球”之间插入分割标记，切分点落在话题切换点。所有句子完整保留，主题纯度高，无混合。
+**分析**：LLM准确在"深度学习"和"篮球"之间插入分割标记，切分点落在话题切换点。所有句子完整保留，主题纯度高，无混合。
 
 **四种分块策略对比**：
 
@@ -853,23 +853,336 @@ NBA汇集了全世界顶尖运动员。
 **生产建议**：仅对关键文档使用，或先用递归分块粗切再对边界处用LLM精切；检查`---SPLIT---`标记是否正确插入，必要时重试；缓存相同文档的分块结果；API失败时降级到语义分块或递归分块。
 
 
-## 📚 综合参考文献
+## 5. 多粒度与智能分块
 
-| 类型 | 文献/出处 | 要点 |
-| :--- | :--- | :--- |
-| **学术论文** | SLIDE: Sliding Localized Information for Document Extraction (2025). *arXiv:2503.17952* | 重叠窗口生成局部上下文，实体提取+24%，关系提取+39% |
-| **学术论文** | Semantic text splitting for RAG with controlled threshold and sliding window size (2025). *DOI: 10.15587/1729-4061.2025.326177* | 动态滑动窗口语义分割方法，IoU最高提升2.8% |
-| **学术论文** | H-RAG: Hierarchical Parent–Child Retrieval (2026). *ACL Anthology* | 层次化父子RAG管道，nDCG@5达0.4271 |
-| **学术论文** | Evaluating Chunking Strategies for RAG (2026). *arXiv:2603.24556* | 滑动窗口在特定领域文档中表现良好 |
-| **学术论文** | Mix-Of-Overlap: Multi-Overlap Chunking (2025). *IEEE Xplore* | 固定窗口变化重叠量，提升金融文档检索 |
-| **学术论文** | WADSeg: Exploiting weak attention associations for enhanced knowledge segmentation in RAG (2025). *Elsevier* | 注意力图分析实现动态断点检测，检索精度超越LLM基线 |
-| **学术论文** | Toward General Semantic Chunking: A Discriminative Framework for Ultra-Long Documents (2025). *arXiv:2602.23370* | 判别式分割模型，13k tokens单次输入，推理速度提升100倍 |
-| **学术论文** | MultiDocFusion: Hierarchical and Multimodal Chunking Pipeline (2025). *EMNLP 2025* | LLM-based章节层级解析，检索精度提升8-15% |
-| **学术论文** | BERTopic-Based Policy Topic Modeling (2026). *IEEE Xplore* | 语义分块+Sentence-BERT+UMAP+HDBSCAN+c-TF-IDF完整流程 |
-| **学术论文** | Comparative Performance Analysis of Sentence Segmentation on the NLTK Brown Corpus (2025). *IEEE Xplore* | spaCy F1=0.947领先，NLTK Punkt作为轻量级替代 |
-| **学术论文** | Dual-granularity Chunking and Dynamic Context Augmentation (2026). *Elsevier* | Prompt Engineering引导LLM构建语义完整段落 |
-| **中文期刊** | 面向企业知识库的层次化分块与混合检索 (2026). *通信技术* | 层次化父子块索引，LLM生成摘要形成双层索引 |
-| **官方文档** | LangChain ParentDocumentRetriever API | 检索小块返回父块的完整实现规范 |
-| **官方文档** | LangChain SemanticChunker Documentation | 百分位数/标准差/四分位距三种断点检测方式 |
-| **官方文档** | BERTopic Best Practices (GitHub) | 长文档建议先切分为句子再进行主题建模 |
-| **社区实践** | RAG文本分块：七种主流策略 (阿里云开发者社区, 2026) | 滑动窗口分块原理与行业配置建议 |
+### 5.1 多粒度索引（Multi-granularity Indexing）
+
+**核心概念**：为同一文档同时建立多种粒度（句子、段落、章节）索引，查询时根据问题复杂度动态选择或融合不同粒度结果，兼顾检索精度与上下文完整性。
+
+**业务逻辑**：细粒度用于精准命中，粗粒度用于提供上下文，通过父子映射关联。
+
+```python
+# 多粒度索引：三级索引 + 动态粒度选择 + 关键词匹配检索
+import re
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+
+# 1. 文档：两个章节
+doc = Document(page_content="""第二章：RAG核心步骤。
+文档加载是第一步，将PDF、Word等格式转为文本。
+文本切分将长文档拆分为语义完整的块。
+向量化使用嵌入模型将文本转为数值向量。
+检索生成根据用户问题找到相关块并交给LLM生成答案。
+
+第三章：高级检索技术。
+混合检索结合向量检索和关键词检索。
+重排序使用交叉编码器对候选文档重新打分。""")
+
+# 2. 章节级：按标题切分，确保每章独立
+chapter_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=150, chunk_overlap=0,
+    separators=["\n\n第三章", "\n\n", "\n", "。", " ", ""]
+)
+sentence_splitter = RecursiveCharacterTextSplitter(chunk_size=30, chunk_overlap=0)
+paragraph_splitter = RecursiveCharacterTextSplitter(chunk_size=80, chunk_overlap=10)
+
+sentences = sentence_splitter.split_text(doc.page_content)
+paragraphs = paragraph_splitter.split_text(doc.page_content)
+chapters = chapter_splitter.split_text(doc.page_content)
+
+print(f"✅ 句子级: {len(sentences)} 块")
+print(f"✅ 段落级: {len(paragraphs)} 块")
+print(f"✅ 章节级: {len(chapters)} 块\n")
+
+# 3. 三级映射
+sentence_to_paragraph = []
+for s in sentences:
+    for p in paragraphs:
+        if s in p:
+            sentence_to_paragraph.append({"sentence": s, "paragraph": p})
+            break
+
+paragraph_to_chapter = []
+for p in paragraphs:
+    for c in chapters:
+        if p in c:
+            paragraph_to_chapter.append({"paragraph": p, "chapter": c})
+            break
+
+# 4. 关键词提取
+STOPWORDS = {"的", "是", "有", "哪些", "什么", "怎么", "如何", "核心", "步骤", "？", "?"}
+
+def extract_keywords(query):
+    tokens = re.findall(r'[\u4e00-\u9fa5]+|[A-Za-z0-9]+', query)
+    keywords = []
+    for t in tokens:
+        if t in STOPWORDS or len(t) < 2:
+            continue
+        keywords.append(t)
+        if len(t) > 3 and re.match(r'[\u4e00-\u9fa5]+', t):
+            for length in [3, 2]:
+                for i in range(len(t) - length + 1):
+                    sub = t[i:i+length]
+                    if sub not in STOPWORDS:
+                        keywords.append(sub)
+    return sorted(set(keywords), key=len, reverse=True)
+
+# 5. 多粒度检索
+def retrieve(query, granularity="auto"):
+    keywords = extract_keywords(query)
+    print(f"   提取关键词: {keywords}")
+    
+    if granularity == "auto":
+        granularity = "sentence" if len(query) <= 8 else "paragraph"
+    
+    if granularity == "sentence":
+        for item in sentence_to_paragraph:
+            if any(kw in item["sentence"] for kw in keywords):
+                return {"hit_level": "句子级", "hit_block": item["sentence"],
+                        "context_level": "段落级", "context_block": item["paragraph"]}
+    elif granularity == "paragraph":
+        for item in paragraph_to_chapter:
+            if any(kw in item["paragraph"] for kw in keywords):
+                return {"hit_level": "段落级", "hit_block": item["paragraph"],
+                        "context_level": "章节级", "context_block": item["chapter"]}
+    return None
+
+# 6. 演示两个查询
+queries = ["向量化", "RAG的核心步骤有哪些？"]
+for q in queries:
+    print(f"🔍 查询: {q}")
+    result = retrieve(q, granularity="auto")
+    if result:
+        print(f"   命中粒度: {result['hit_level']}")
+        print(f"   命中块: {result['hit_block'][:50]}...")
+        print(f"   返回上下文({result['context_level']}): {result['context_block'][:60]}...\n")
+    else:
+        print("   未命中\n")
+```
+
+**运行结果**：
+```
+✅ 句子级: 8 块
+✅ 段落级: 3 块
+✅ 章节级: 2 块
+
+🔍 查询: 向量化
+   提取关键词: ['向量化']
+   命中粒度: 句子级
+   命中块: 向量化使用嵌入模型将文本转为数值向量。...
+   返回上下文(段落级): 第二章：RAG核心步骤。
+文档加载是第一步，将PDF、Word等格式转为文本。
+文本切分将长文档拆分为语义完整的块。
+向...
+
+🔍 查询: RAG的核心步骤有哪些？
+   提取关键词: ['的核心步骤有哪些', '有哪些', '的核心', '核心步', '骤有哪', '步骤有', '心步骤', 'RAG', '的核', '有哪', '心步', '骤有']
+   命中粒度: 段落级
+   命中块: 第二章：RAG核心步骤。
+文档加载是第一步，将PDF、Word等格式转为文本。
+文本切分将长文档拆分...
+   返回上下文(章节级): 第二章：RAG核心步骤。
+文档加载是第一步，将PDF、Word等格式转为文本。
+文本切分将长文档拆分为语义完整的块。
+向...
+```
+
+**结果分析**：
+
+*成功点*：三级切分清晰（句子8块、段落3块、章节2块）；动态选择粒度有效（"向量化"走句子级，"RAG核心步骤"走段落级）；命中精准且返回完整上下文。
+
+*问题点*：关键词噪音大（停用词过滤不彻底）；章节级未被检索；关键词匹配粗糙。
+
+*契合度评估*：约 80%。核心机制完整，但关键词质量待优化，融合检索未实现。
+
+**技术扩展方向**：
+
+| 方向 | 说明 |
+| :--- | :--- |
+| 向量检索替代关键词匹配 | 用嵌入模型 + 向量数据库，支持语义级匹配 |
+| 多粒度融合检索 | 同时检索多个粒度，用 RRF 加权融合排序 |
+| 动态粒度路由 | 用小模型判断查询类型，自动选择最优粒度 |
+| 层次化索引优化 | 使用 LlamaIndex `HierarchicalNodeParser` 自动构建多级索引 |
+| 跨文档多粒度 | 扩展到多文档场景，支持跨文档的粒度对齐 |
+
+
+### 5.2 后期分块（Late Chunking）
+
+**核心概念**：先对整个文档生成包含全局上下文信息的词元向量，再分块和池化。传统分块是"先切块再嵌入"，后期分块是"先嵌入再切块"。
+
+**业务逻辑**：每个块的向量都携带全文语境，解决指代、逻辑衔接等跨块信息丢失问题。
+
+```python
+# uv pip install transformers torch
+
+import torch
+from transformers import AutoModel, AutoTokenizer
+
+# 1. 加载模型（bge-m3，支持长上下文，输出1024维）
+model_name = "BAAI/bge-m3"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModel.from_pretrained(model_name)
+model.eval()
+
+# 2. 待处理文档
+text = """人工智能是计算机科学的重要分支。
+机器学习是人工智能的核心方法。
+深度学习使用多层神经网络。
+篮球是一项广受欢迎的运动。
+NBA汇集了顶尖运动员。"""
+
+# 3. 按句号切分文本，得到干净句子列表
+sentences = [s.strip() + "。" for s in text.replace("\n", "").split("。") if s.strip()]
+print(f"✅ 切分出 {len(sentences)} 个句子")
+for i, s in enumerate(sentences, 1):
+    print(f"  句子{i}: {s}")
+
+# 4. 逐句 tokenize，记录 token 长度，计算整篇边界
+sentence_lengths = []
+for s in sentences:
+    ids = tokenizer.encode(s, add_special_tokens=False)
+    sentence_lengths.append(len(ids))
+print(f"\n✅ 各句 token 长度: {sentence_lengths}")
+print(f"✅ 总 token 数（不含特殊token）: {sum(sentence_lengths)}")
+
+# 5. 整篇编码，获得词元级向量
+inputs = tokenizer(text, return_tensors="pt", truncation=False)
+with torch.no_grad():
+    outputs = model(**inputs)
+token_embeddings = outputs.last_hidden_state[0]
+
+# 6. 跳过开头特殊token，计算句子边界
+offset = 1
+boundaries = []
+start = offset
+for length in sentence_lengths:
+    end = start + length
+    boundaries.append((start, end))
+    start = end
+
+print(f"\n✅ 句子边界: {boundaries}")
+
+# 7. 对每个块做平均池化，得到块向量
+chunk_vectors = []
+chunk_texts = []
+for i, (start, end) in enumerate(boundaries):
+    chunk_vec = token_embeddings[start:end].mean(dim=0)
+    chunk_vec = torch.nn.functional.normalize(chunk_vec, p=2, dim=0)
+    chunk_vectors.append(chunk_vec)
+    chunk_texts.append(sentences[i])
+
+print("\n📦 后期分块的块向量：")
+for i, (vec, txt) in enumerate(zip(chunk_vectors, chunk_texts), 1):
+    vec_list = [round(x, 4) for x in vec[:5].tolist()]
+    print(f"  块 {i} (维度: {vec.shape[0]}): {txt}")
+    print(f"    向量前5维: {vec_list}\n")
+
+# 8. 检索验证：查询与各块的语义相似度
+query = "深度学习用什么模型？"
+query_inputs = tokenizer(query, return_tensors="pt", truncation=True)
+with torch.no_grad():
+    query_outputs = model(**query_inputs)
+query_tokens = query_outputs.last_hidden_state[0][1:-1]
+query_vec = query_tokens.mean(dim=0)
+query_vec = torch.nn.functional.normalize(query_vec, p=2, dim=0)
+
+print(f"🔍 查询: {query}")
+print("   各块相似度对比：")
+for i, chunk_vec in enumerate(chunk_vectors, 1):
+    similarity = float(torch.dot(query_vec, chunk_vec))
+    print(f"  块{i}: {similarity:.4f}  ← {chunk_texts[i-1]}")
+```
+
+**运行结果**：
+```
+✅ 切分出 5 个句子
+  句子1: 人工智能是计算机科学的重要分支。
+  句子2: 机器学习是人工智能的核心方法。
+  句子3: 深度学习使用多层神经网络。
+  句子4: 篮球是一项广受欢迎的运动。
+  句子5: NBA汇集了顶尖运动员。
+
+✅ 各句 token 长度: [9, 8, 9, 9, 7]
+✅ 总 token 数（不含特殊token）: 42
+
+✅ 句子边界: [(1, 10), (10, 18), (18, 27), (27, 36), (36, 43)]
+
+📦 后期分块的块向量：
+  块 1 (维度: 1024): 人工智能是计算机科学的重要分支。
+    向量前5维: [0.022, -0.0273, -0.0202, 0.0065, -0.0048]
+  块 2 (维度: 1024): 机器学习是人工智能的核心方法。
+    向量前5维: [0.0195, -0.0295, -0.0177, 0.0042, -0.0014]
+  块 3 (维度: 1024): 深度学习使用多层神经网络。
+    向量前5维: [0.0161, -0.0311, -0.0176, 0.0127, -0.0026]
+  块 4 (维度: 1024): 篮球是一项广受欢迎的运动。
+    向量前5维: [0.0237, -0.0331, -0.0195, 0.0028, 0.007]
+  块 5 (维度: 1024): NBA汇集了顶尖运动员。
+    向量前5维: [0.0193, -0.0301, -0.0183, 0.0075, -0.0018]
+
+🔍 查询: 深度学习用什么模型？
+   各块相似度对比：
+  块1: 0.7492  ← 人工智能是计算机科学的重要分支。
+  块2: 0.7675  ← 机器学习是人工智能的核心方法。
+  块3: 0.7655  ← 深度学习使用多层神经网络。
+  块4: 0.7431  ← 篮球是一项广受欢迎的运动。
+  块5: 0.7350  ← NBA汇集了顶尖运动员。
+```
+
+**结果分析**：
+
+*代码逻辑正确*：整篇编码 → 词元向量 → 按句切块 → 平均池化 → 检索验证，全流程无误。
+
+*相似度差异极小*：块1~3（AI）与块4~5（篮球）的相似度仅差 0.03，未体现后期分块预期优势。
+
+*原因*：后期分块让每个块向量携带**全文语境**，当文档混合两个不相关话题时，全局语境"稀释"了各块的语义特征，块间区分度下降。
+
+*局限*：后期分块更适合**主题连贯的长文档**，在主题混杂的短文档上优势不明显。
+
+**技术扩展方向**：
+
+| 方向 | 说明 |
+| :--- | :--- |
+| 主题单一长文档测试 | 用 20~50 句主题连贯的文档，后期分块优势更明显 |
+| 与传统分块对比实验 | 同一查询下对比两种方法的相似度排序差异 |
+| 池化策略优化 | 尝试加权池化、CLS池化、注意力池化 |
+| 多语言与跨领域验证 | 在英文、法律、医疗等场景验证泛化能力 |
+| 与多粒度索引结合 | 后期分块 + 多粒度索引，形成更强的检索体系 |
+
+
+## 📚 参考文献
+
+### 官方文档与工程实践
+
+| 文献/出处 | 要点 |
+| :--- | :--- |
+| LangChain `ParentDocumentRetriever` API | 父子块检索的工程实现规范 |
+| LangChain `SemanticChunker` Documentation | 百分位数/标准差/四分位距三种断点检测方式 |
+| LlamaIndex `HierarchicalNodeParser` 与 `AutoMergingRetriever` | 层次化索引与自动合并检索的官方实现 |
+| BERTopic Best Practices (GitHub) | 长文档建议先切分为句子再进行主题建模 |
+| *Multi-Vector Retriever* (LangChain Blog, 2023) | 摘要+原文双索引提升检索质量 |
+| BAAI/bge-m3 模型卡 | 支持 8192 tokens 长上下文和多语言，适合后期分块 |
+| Hugging Face Transformers `AutoModel` | `last_hidden_state` 提供词元级向量输出 |
+| RAG文本分块：七种主流策略 (阿里云开发者社区, 2026) | 滑动窗口分块原理与行业配置建议 |
+
+### 学术论文
+
+| 文献 | 要点 |
+| :--- | :--- |
+| SLIDE: Sliding Localized Information for Document Extraction (2025). *arXiv:2503.17952* | 重叠窗口生成局部上下文，实体提取+24%，关系提取+39% |
+| Semantic text splitting for RAG with controlled threshold and sliding window size (2025). *DOI: 10.15587/1729-4061.2025.326177* | 动态滑动窗口语义分割方法，IoU最高提升2.8% |
+| H-RAG: Hierarchical Parent–Child Retrieval (2026). *ACL Anthology* | 层次化父子RAG管道，nDCG@5达0.4271 |
+| Evaluating Chunking Strategies for RAG (2026). *arXiv:2603.24556* | 滑动窗口在特定领域文档中表现良好 |
+| Mix-Of-Overlap: Multi-Overlap Chunking (2025). *IEEE Xplore* | 固定窗口变化重叠量，提升金融文档检索 |
+| WADSeg: Exploiting weak attention associations for enhanced knowledge segmentation in RAG (2025). *Elsevier* | 注意力图分析实现动态断点检测，检索精度超越LLM基线 |
+| Toward General Semantic Chunking: A Discriminative Framework for Ultra-Long Documents (2025). *arXiv:2602.23370* | 判别式分割模型，13k tokens单次输入，推理速度提升100倍 |
+| MultiDocFusion: Hierarchical and Multimodal Chunking Pipeline (2025). *EMNLP 2025* | LLM-based章节层级解析，检索精度提升8-15% |
+| BERTopic-Based Policy Topic Modeling (2026). *IEEE Xplore* | 语义分块+Sentence-BERT+UMAP+HDBSCAN+c-TF-IDF完整流程 |
+| Comparative Performance Analysis of Sentence Segmentation on the NLTK Brown Corpus (2025). *IEEE Xplore* | spaCy F1=0.947领先，NLTK Punkt作为轻量级替代 |
+| Dual-granularity Chunking and Dynamic Context Augmentation (2026). *Elsevier* | Prompt Engineering引导LLM构建语义完整段落 |
+| Late Chunking: Contextual Chunk Embeddings Using Long-Context Embedding Models (Jina AI, 2024) | 提出后期分块范式，长文档检索优于传统分块 |
+
+### 中文期刊
+
+| 文献 | 要点 |
+| :--- | :--- |
+| 面向企业知识库的层次化分块与混合检索 (2026). *通信技术* | 层次化父子块索引，LLM生成摘要形成双层索引 |

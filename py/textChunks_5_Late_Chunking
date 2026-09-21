@@ -1,0 +1,84 @@
+# uv pip install transformers torch
+
+import torch
+from transformers import AutoModel, AutoTokenizer
+
+# 1. 加载模型（bge-m3，支持长上下文，输出1024维）
+model_name = "BAAI/bge-m3"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModel.from_pretrained(model_name)
+model.eval()
+
+# 2. 待处理文档
+text = """人工智能是计算机科学的重要分支。
+机器学习是人工智能的核心方法。
+深度学习使用多层神经网络。
+篮球是一项广受欢迎的运动。
+NBA汇集了顶尖运动员。"""
+
+# 3. 按句号切分文本，得到干净句子列表
+sentences = [s.strip() + "。" for s in text.replace("\n", "").split("。") if s.strip()]
+print(f"✅ 切分出 {len(sentences)} 个句子")
+for i, s in enumerate(sentences, 1):
+    print(f"  句子{i}: {s}")
+
+# 4. 逐句 tokenize，记录 token 长度，计算整篇边界
+#    这样可避免特殊 token 或换行符干扰
+sentence_lengths = []
+for s in sentences:
+    ids = tokenizer.encode(s, add_special_tokens=False)
+    sentence_lengths.append(len(ids))
+print(f"\n✅ 各句 token 长度: {sentence_lengths}")
+print(f"✅ 总 token 数（不含特殊token）: {sum(sentence_lengths)}")
+
+# 5. 整篇编码，获得词元级向量
+inputs = tokenizer(text, return_tensors="pt", truncation=False)
+with torch.no_grad():
+    outputs = model(**inputs)
+token_embeddings = outputs.last_hidden_state[0]  # [seq_len, hidden_dim]
+
+# 6. 去掉特殊 token 的影响：CLS 在开头，SEP 在结尾
+#    bge-m3 使用 <s>...</s>，所以偏移 1
+offset = 1  # 跳过开头的 <s>
+boundaries = []
+start = offset
+for length in sentence_lengths:
+    end = start + length
+    boundaries.append((start, end))
+    start = end
+
+print(f"\n✅ 句子边界: {boundaries}")
+
+# 7. 对每个块做平均池化，得到块向量
+chunk_vectors = []
+chunk_texts = []
+for i, (start, end) in enumerate(boundaries):
+    # 7.1 平均池化词元向量
+    chunk_vec = token_embeddings[start:end].mean(dim=0)
+    # 7.2 归一化（使余弦相似度计算稳定）
+    chunk_vec = torch.nn.functional.normalize(chunk_vec, p=2, dim=0)
+    chunk_vectors.append(chunk_vec)
+    chunk_texts.append(sentences[i])
+
+print("\n📦 后期分块的块向量：")
+for i, (vec, txt) in enumerate(zip(chunk_vectors, chunk_texts), 1):
+    # 修复：先转 list，再对每个元素 round
+    vec_list = [round(x, 4) for x in vec[:5].tolist()]
+    print(f"  块 {i} (维度: {vec.shape[0]}): {txt}")
+    print(f"    向量前5维: {vec_list}\n")
+
+# 8. 检索验证：查询与各块的语义相似度
+query = "深度学习用什么模型？"
+query_inputs = tokenizer(query, return_tensors="pt", truncation=True)
+with torch.no_grad():
+    query_outputs = model(**query_inputs)
+# 查询向量：去掉特殊 token 后平均池化
+query_tokens = query_outputs.last_hidden_state[0][1:-1]  # 跳过 <s> 和 </s>
+query_vec = query_tokens.mean(dim=0)
+query_vec = torch.nn.functional.normalize(query_vec, p=2, dim=0)
+
+print(f"🔍 查询: {query}")
+print("   各块相似度对比：")
+for i, chunk_vec in enumerate(chunk_vectors, 1):
+    similarity = float(torch.dot(query_vec, chunk_vec))
+    print(f"  块{i}: {similarity:.4f}  ← {chunk_texts[i-1]}")
